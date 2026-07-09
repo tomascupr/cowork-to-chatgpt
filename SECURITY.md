@@ -6,6 +6,10 @@ Cowork transcripts can contain credentials, personal information, customer data,
 confidential material. The built-in redactor is best effort, not a guarantee. Review every
 export before uploading, publishing, or sharing it.
 
+`--mode archive` intentionally copies untouched Cowork metadata and JSONL files outside the
+ChatGPT upload folders. Those raw files can contain system prompts, account details, tool inputs,
+tool results, and credentials. Never upload or publish them without a separate security review.
+
 Do not attach real Cowork metadata, transcripts, memory, manifests, or exports to public bug
 reports. Reproduce parser problems with a minimal synthetic fixture.
 

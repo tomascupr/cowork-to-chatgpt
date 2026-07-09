@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cowork-to-chatgpt"
-version = "0.1.0"
+version = "0.2.0"
 description = "Export local Claude Cowork context into a privacy-conscious ChatGPT Project package."
 readme = "README.md"
 license = "MIT"
