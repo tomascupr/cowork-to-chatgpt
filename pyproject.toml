@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cowork-to-chatgpt"
+version = "0.1.0"
+description = "Export local Claude Cowork context into a privacy-conscious ChatGPT Project package."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Tomas Cupr" }]
+keywords = ["anthropic", "chatgpt", "claude", "cowork", "migration"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[dependency-groups]
+dev = ["ruff==0.15.1"]
+
+[project.scripts]
+cowork2chatgpt = "cowork2chatgpt.cli:main"
+
+[project.urls]
+Issues = "https://github.com/tomascupr/cowork-to-chatgpt/issues"
+Source = "https://github.com/tomascupr/cowork-to-chatgpt"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cowork2chatgpt"]
