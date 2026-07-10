@@ -8,7 +8,6 @@ from pathlib import Path
 
 from . import __version__
 from .core import (
-    DEFAULT_TARGET_CHARS,
     CoworkExportError,
     ExportOptions,
     discover_memory_files,
@@ -23,14 +22,12 @@ from .core import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cowork2chatgpt",
-        description="Export isolated Claude Cowork workspaces for ChatGPT Projects.",
+        description="Move isolated Claude Cowork memory and history into ChatGPT-ready files.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    scan = subparsers.add_parser(
-        "scan", help="List local Cowork workspaces without reading transcript contents."
-    )
+    scan = subparsers.add_parser("scan", help="List local Cowork workspaces.")
     add_source_argument(scan)
     scan.add_argument(
         "--json", action="store_true", help="Print machine-readable JSON."
@@ -39,17 +36,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit",
         type=positive_int,
         default=10,
-        help="Maximum recent sessions and unassigned IDs to show (default: 10).",
+        help="Maximum unassigned workspace IDs to show (default: 10).",
     )
 
     export = subparsers.add_parser(
-        "export", help="Create one isolated ChatGPT package per Cowork workspace."
+        "export", help="Create one ready-to-use context folder per workspace."
     )
     export.add_argument(
         "output",
         nargs="?",
         type=Path,
-        help="New directory to create (default: cowork-export-YYYY-MM-DD).",
+        help="New directory to create (default: chatgpt-context-YYYY-MM-DD).",
     )
     add_source_argument(export)
     export.add_argument(
@@ -60,65 +57,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export only this workspace ID. Repeat to select several; scan lists IDs.",
     )
     export.add_argument(
-        "--mode",
-        choices=("standard", "evidence", "archive"),
-        default="standard",
-        help=(
-            "standard=text only; evidence=redacted tool evidence and sidechains; "
-            "archive=evidence plus untouched raw local backup"
-        ),
+        "--with-evidence",
+        action="store_true",
+        help="Also include redacted tool evidence and subagent history.",
     )
     export.add_argument(
-        "--memory-mode",
-        choices=("separate", "copy", "none"),
-        default="separate",
-        help=(
-            "separate=review global memory separately; copy=put it in every workspace; "
-            "none=omit it"
-        ),
-    )
-    export.add_argument(
-        "--since",
-        type=iso_date,
-        help="Only include sessions active on or after YYYY-MM-DD.",
+        "--since", type=iso_date, help="Include sessions active on or after YYYY-MM-DD."
     )
     export.add_argument(
         "--exclude-archived",
         action="store_true",
-        help="Skip sessions marked archived in local metadata.",
+        help="Skip sessions marked archived in Cowork.",
     )
     export.add_argument(
-        "--include-sidechains",
+        "--no-shared-memory",
         action="store_true",
-        help="Include subagent text in standard mode. Evidence/archive modes include it already.",
-    )
-    export.add_argument(
-        "--copy-artifacts",
-        action="store_true",
-        help="Copy filtered user-facing artifacts outside the ChatGPT upload folders.",
-    )
-    export.add_argument(
-        "--max-artifact-mb",
-        type=positive_float,
-        default=25.0,
-        help="Maximum size of each copied artifact in MiB (default: 25).",
-    )
-    export.add_argument(
-        "--no-redact",
-        action="store_true",
-        help="Disable best-effort credential redaction in ChatGPT upload files.",
-    )
-    export.add_argument(
-        "--max-project-files",
-        type=positive_int,
-        default=20,
-        help="Maximum files in each workspace's ChatGPT folder (default: 20).",
-    )
-    export.add_argument(
-        "--target-chunk-mb",
-        type=positive_float,
-        default=DEFAULT_TARGET_CHARS / (1024 * 1024),
-        help="Preferred transcript chunk size in approximate MiB (default: 1.43).",
+        help="Do not export Cowork's hidden cross-workspace memory for review.",
     )
     return parser
 
@@ -149,90 +103,75 @@ def run_scan(args: argparse.Namespace) -> int:
     source = resolve_source(args.source)
     sessions, warnings = discover_sessions(source)
     workspaces = group_sessions(sessions)
-    memory_files = discover_memory_files(source)
+    shared_memory = discover_memory_files(source)
 
     if args.json:
-        payload = {
-            "source": str(source),
-            "sessions": len(sessions),
-            "workspaces": [
+        print(
+            json.dumps(
                 {
-                    "workspace_id": workspace.workspace_id,
-                    "name": workspace.name,
-                    "folders": list(workspace.folders),
-                    "sessions": len(workspace.sessions),
-                    "archived_sessions": sum(
-                        session.archived for session in workspace.sessions
-                    ),
-                    "recent": [
+                    "source": str(source),
+                    "sessions": len(sessions),
+                    "workspaces": [
                         {
-                            "session_id": session.session_id,
-                            "title": session.title,
-                            "last_activity": (
-                                session.last_activity_at.isoformat()
-                                if session.last_activity_at
-                                else None
+                            "workspace_id": workspace.workspace_id,
+                            "name": workspace.name,
+                            "folders": list(workspace.folders),
+                            "sessions": len(workspace.sessions),
+                            "archived_sessions": sum(
+                                session.archived for session in workspace.sessions
                             ),
                         }
-                        for session in workspace.sessions[: args.limit]
+                        for workspace in workspaces
                     ],
-                }
-                for workspace in workspaces
-            ],
-            "memory_files": len(memory_files),
-            "warnings": warnings,
-        }
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+                    "shared_memory_files": len(shared_memory),
+                    "warnings": warnings,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
         return 0
 
     print(f"Cowork data: {source}")
     print(f"Sessions: {len(sessions)}")
     print(f"Isolated workspaces: {len(workspaces)}")
-    print(f"Durable memory files (kept separate by default): {len(memory_files)}")
+    print(f"Hidden shared-memory files: {len(shared_memory)}")
     print(f"Discovery warnings: {len(warnings)}")
     assigned = [workspace for workspace in workspaces if workspace.folders]
     unassigned = [workspace for workspace in workspaces if not workspace.folders]
-    print("\nFolder-based workspace IDs:")
+    print("\nWorkspace IDs:")
     for workspace in assigned:
-        folders = ", ".join(workspace.folders) or "no selected folder"
-        archived = sum(session.archived for session in workspace.sessions)
+        folders = ", ".join(workspace.folders)
         latest = workspace.sessions[0].last_activity_at if workspace.sessions else None
         print(
-            f"- {workspace.workspace_id}: {len(workspace.sessions)} sessions "
-            f"({archived} archived), latest {format_datetime(latest)}"
+            f"- {workspace.workspace_id}: {len(workspace.sessions)} sessions, "
+            f"latest {format_datetime(latest)}"
         )
         print(f"  {folders}")
     if unassigned:
         print(
-            f"\nUnassigned sessions: {len(unassigned)}. Each is isolated in its own package; "
+            f"\nUnassigned sessions: {len(unassigned)}. Each stays isolated; "
             f"showing {min(len(unassigned), args.limit)} IDs:"
         )
         for workspace in unassigned[: args.limit]:
-            latest = workspace.sessions[0].last_activity_at
-            print(f"- {workspace.workspace_id}: latest {format_datetime(latest)}")
+            print(f"- {workspace.workspace_id}")
         if len(unassigned) > args.limit:
-            print("  Run `cowork2chatgpt scan --json` to list every unassigned ID.")
+            print("  Run `cowork2chatgpt scan --json` to list every ID.")
     return 0
 
 
 def run_export(args: argparse.Namespace) -> int:
     source = resolve_source(args.source)
-    output = args.output or Path.cwd() / f"cowork-export-{date.today().isoformat()}"
+    output = args.output or Path.cwd() / f"chatgpt-context-{date.today().isoformat()}"
     report = export_package(
         ExportOptions(
             source=source,
             output=output,
             since=args.since,
             exclude_archived=args.exclude_archived,
-            include_sidechains=args.include_sidechains,
-            redact=not args.no_redact,
-            max_project_files=args.max_project_files,
-            target_chunk_chars=int(args.target_chunk_mb * 1024 * 1024),
-            mode=args.mode,
-            memory_mode=args.memory_mode,
+            include_evidence=args.with_evidence,
+            include_shared_memory=not args.no_shared_memory,
             workspace_ids=tuple(args.workspace),
-            copy_artifacts=args.copy_artifacts,
-            max_artifact_bytes=int(args.max_artifact_mb * 1024 * 1024),
         )
     )
 
@@ -243,18 +182,14 @@ def run_export(args: argparse.Namespace) -> int:
     )
     print(f"Isolated workspaces: {len(report.workspaces)}")
     for workspace in report.workspaces:
-        relative = workspace.path.relative_to(report.output)
         print(
             f"- {workspace.workspace_id}: {workspace.sessions} sessions, "
-            f"{workspace.project_files} upload files -> {relative / 'chatgpt'}"
+            f"{workspace.memory_sources} memory sources, {workspace.files} files"
         )
-    if args.memory_mode == "separate" and report.memory_files:
-        print("Shared Cowork memory for selective review: shared-memory/chatgpt")
-    print(f"Parser/read warnings: {report.transcript_warnings}")
-    print(
-        "Credential-pattern matches redacted: "
-        f"{report.secrets_redacted} (not a guarantee that the export is secret-free)"
-    )
+    if report.shared_memory_sources:
+        print("Hidden shared memory is quarantined in: _shared-memory/MEMORY.md")
+    print(f"Parser/read warnings: {report.warnings}")
+    print(f"Credential-pattern matches redacted: {report.secrets_redacted}")
     return 0
 
 
@@ -270,14 +205,3 @@ def positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
-
-
-def positive_float(value: str) -> float:
-    parsed = float(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be greater than zero")
-    return parsed
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

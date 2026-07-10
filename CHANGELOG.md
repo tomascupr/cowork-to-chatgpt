@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-07-10
+
+- Replace nested migration packages with one ready-to-open folder per workspace.
+- Export the portable `AGENTS.md`, `MEMORY.md`, `HISTORY_INDEX.md`, and `HISTORY*.md` format.
+- Use each workspace's existing `CLAUDE.md` and `memory/**/*.md` as its primary durable memory.
+- Keep hidden cross-workspace Cowork memory quarantined for selective review.
+- Reduce the CLI to workspace selection, date/archive filters, optional evidence, and shared-memory
+  exclusion.
+- Remove raw archive and artifact-copy modes from the transfer workflow.
+
 ## 0.2.0 — 2026-07-10
 
 - Divide exports into isolated packages based on canonical Cowork folder sets.

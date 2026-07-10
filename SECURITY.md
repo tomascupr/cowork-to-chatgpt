@@ -6,9 +6,14 @@ Cowork transcripts can contain credentials, personal information, customer data,
 confidential material. The built-in redactor is best effort, not a guarantee. Review every
 export before uploading, publishing, or sharing it.
 
-`--mode archive` intentionally copies untouched Cowork metadata and JSONL files outside the
-ChatGPT upload folders. Those raw files can contain system prompts, account details, tool inputs,
-tool results, and credentials. Never upload or publish them without a separate security review.
+The exporter never copies raw metadata or JSONL transcripts. Standard mode excludes system
+prompts, hidden reasoning, tool calls, and tool results. `--with-evidence` adds redacted,
+size-capped tool evidence and subagent history, which can still contain confidential material or
+credentials that the redactor does not recognize.
+
+Workspace memory is read from `CLAUDE.md`, root memory/context files, and `memory/**/*.md` under
+the selected working folders. Hidden cross-workspace Cowork memory is exported separately and
+must not be added wholesale to unrelated projects.
 
 Do not attach real Cowork metadata, transcripts, memory, manifests, or exports to public bug
 reports. Reproduce parser problems with a minimal synthetic fixture.

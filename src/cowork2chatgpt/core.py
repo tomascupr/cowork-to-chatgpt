@@ -5,9 +5,8 @@ from .discovery import (
     default_source_candidates,
     discover_memory_files,
     discover_sessions,
+    discover_workspace_memory_files,
     group_sessions,
-    inspect_artifacts,
-    list_artifacts,
     normalize_home,
     parse_timestamp,
     resolve_source,
@@ -19,8 +18,6 @@ from .exporter import (
     pack_documents,
 )
 from .models import (
-    Artifact,
-    ArtifactInventory,
     Coverage,
     ExportOptions,
     ExportReport,
@@ -34,8 +31,6 @@ from .transcript import Redactor, parse_session
 DEFAULT_TARGET_CHARS = 1_500_000
 
 __all__ = [
-    "Artifact",
-    "ArtifactInventory",
     "Coverage",
     "CoworkExportError",
     "DEFAULT_TARGET_CHARS",
@@ -50,11 +45,10 @@ __all__ = [
     "default_source_candidates",
     "discover_memory_files",
     "discover_sessions",
+    "discover_workspace_memory_files",
     "export_package",
     "format_datetime",
     "group_sessions",
-    "inspect_artifacts",
-    "list_artifacts",
     "normalize_home",
     "pack_documents",
     "parse_session",

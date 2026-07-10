@@ -98,7 +98,7 @@ def parse_session(
     if session.main_transcript is None:
         return [], coverage
 
-    include_evidence = mode in {"evidence", "archive"}
+    include_evidence = mode == "evidence"
     include_sidechain_content = include_sidechains or include_evidence
     paths: list[tuple[Any, bool]] = [(session.main_transcript, False)]
     if include_sidechain_content:

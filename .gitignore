@@ -9,3 +9,5 @@ build/
 *.egg-info/
 cowork-export/
 cowork-export-*/
+chatgpt-context/
+chatgpt-context-*/

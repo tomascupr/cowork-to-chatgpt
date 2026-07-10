@@ -10,61 +10,12 @@ from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from .models import Artifact, ArtifactInventory, Session, Workspace
+from .models import Session, Workspace
 
 
 USER_PREFERENCES_PATTERN = re.compile(
     r"<user_preferences>(.*?)</user_preferences>", re.DOTALL | re.IGNORECASE
 )
-DOCUMENT_EXTENSIONS = {
-    ".csv",
-    ".docx",
-    ".epub",
-    ".html",
-    ".md",
-    ".odt",
-    ".pdf",
-    ".pptx",
-    ".rtf",
-    ".tsv",
-    ".txt",
-    ".xlsx",
-}
-IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
-STRUCTURED_EXTENSIONS = {".json", ".yaml", ".yml"}
-VIDEO_EXTENSIONS = {".mov", ".mp4", ".webm"}
-IGNORED_FILENAMES = {
-    "package-lock.json",
-    "package.json",
-    "tsconfig.json",
-}
-IGNORED_DIRECTORY_NAMES = {
-    "__pycache__",
-    "_rels",
-    "build",
-    "cache",
-    "caches",
-    "crops",
-    "dist",
-    "docprops",
-    "node_modules",
-    "ppt",
-    "preview",
-    "previews",
-    "qa",
-    "render",
-    "renders",
-    "temp",
-    "temporary",
-    "thumbnails",
-    "tmp",
-    "unpacked",
-    "unpacked2",
-    "vendor",
-    "venv",
-    "word",
-    "xl",
-}
 
 
 class CoworkExportError(RuntimeError):
@@ -262,68 +213,30 @@ def discover_memory_files(source: Path) -> list[Path]:
     )
 
 
-def inspect_artifacts(session: Session) -> ArtifactInventory:
-    outputs_path = session.workspace_path / "outputs"
-    if not outputs_path.is_dir():
-        return ArtifactInventory(total_files=0, candidates=())
-
-    total = 0
-    candidates: list[Artifact] = []
-    for path in outputs_path.rglob("*"):
-        if not path.is_file() or path.is_symlink():
+def discover_workspace_memory_files(workspace: Workspace) -> list[Path]:
+    """Find durable memory that belongs to this workspace's selected folders."""
+    candidates: list[Path] = []
+    for folder in workspace.folders:
+        root = Path(folder).expanduser()
+        if not root.is_dir():
             continue
-        total += 1
-        relative = path.relative_to(outputs_path)
-        if not is_user_facing_artifact(relative):
-            continue
-        try:
-            size = path.stat().st_size
-        except OSError:
-            continue
-        candidates.append(
-            Artifact(
-                relative_path=relative.as_posix(),
-                source_path=path,
-                size=size,
+        for name in ("CLAUDE.md", "MEMORY.md", "memory.md", "CONTEXT.md", "context.md"):
+            path = root / name
+            if path.is_file():
+                candidates.append(path)
+        memory_dir = root / "memory"
+        if memory_dir.is_dir():
+            candidates.extend(
+                path for path in memory_dir.rglob("*.md") if path.is_file()
             )
-        )
-    candidates.sort(key=lambda item: item.relative_path.lower())
-    return ArtifactInventory(total_files=total, candidates=tuple(candidates))
 
-
-def list_artifacts(session: Session) -> tuple[str, ...]:
-    return tuple(item.relative_path for item in inspect_artifacts(session).candidates)
-
-
-def is_user_facing_artifact(relative: Path) -> bool:
-    if any(part.startswith(".") for part in relative.parts):
-        return False
-    directory_parts = {part.lower() for part in relative.parts[:-1]}
-    if directory_parts & IGNORED_DIRECTORY_NAMES:
-        return False
-    if any(is_intermediate_directory(part) for part in relative.parts[:-1]):
-        return False
-    if relative.name.lower() in IGNORED_FILENAMES:
-        return False
-
-    suffix = relative.suffix.lower()
-    if suffix in DOCUMENT_EXTENSIONS:
-        return True
-    if suffix in IMAGE_EXTENSIONS or suffix in VIDEO_EXTENSIONS:
-        return len(relative.parts) <= 3
-    if suffix in STRUCTURED_EXTENSIONS:
-        return len(relative.parts) <= 2
-    return False
-
-
-def is_intermediate_directory(value: str) -> bool:
-    lowered = value.lower().strip("._-")
-    if lowered in {"probe", "slides", "verify", "work"} or lowered.startswith("qa"):
-        return True
-    return any(
-        marker in lowered
-        for marker in ("build", "check", "crop", "preview", "render", "unpack")
-    )
+    unique: dict[Path, Path] = {}
+    for path in candidates:
+        try:
+            unique[path.resolve()] = path
+        except OSError:
+            unique[path.absolute()] = path
+    return sorted(unique.values(), key=lambda path: str(path).lower())
 
 
 def extract_user_preferences(data: dict[str, Any]) -> tuple[str, ...]:

@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 
-ExportMode = Literal["standard", "evidence", "archive"]
-MemoryMode = Literal["separate", "copy", "none"]
+ExportMode = Literal["standard", "evidence"]
 
 
 @dataclass(frozen=True)
@@ -43,19 +42,6 @@ class Turn:
     event_id: str | None
 
 
-@dataclass(frozen=True)
-class Artifact:
-    relative_path: str
-    source_path: Path
-    size: int
-
-
-@dataclass(frozen=True)
-class ArtifactInventory:
-    total_files: int
-    candidates: tuple[Artifact, ...]
-
-
 @dataclass
 class Coverage:
     source_records_main: int = 0
@@ -77,11 +63,6 @@ class Coverage:
     evidence_items_truncated: int = 0
     system_prompts_omitted: int = 0
     user_preferences_preserved: int = 0
-    artifacts_found: int = 0
-    artifact_candidates: int = 0
-    artifact_references_rendered: int = 0
-    artifacts_copied: int = 0
-    artifacts_skipped_size: int = 0
     warnings: int = 0
 
     def merge(self, other: Coverage) -> None:
@@ -93,14 +74,12 @@ class Coverage:
         return {field.name: getattr(self, field.name) for field in fields(self)}
 
 
-@dataclass
+@dataclass(frozen=True)
 class SessionExport:
     session: Session
     markdown: str
     turns: tuple[Turn, ...]
-    artifacts: ArtifactInventory
     coverage: Coverage
-    archive_filename: str
 
 
 @dataclass(frozen=True)
@@ -109,15 +88,12 @@ class ExportOptions:
     output: Path
     since: date | None = None
     exclude_archived: bool = False
-    include_sidechains: bool = False
+    include_evidence: bool = False
+    include_shared_memory: bool = True
     redact: bool = True
     max_project_files: int = 20
     target_chunk_chars: int = 1_500_000
-    mode: ExportMode = "standard"
-    memory_mode: MemoryMode = "separate"
     workspace_ids: tuple[str, ...] = ()
-    copy_artifacts: bool = False
-    max_artifact_bytes: int = 25 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -126,7 +102,8 @@ class WorkspaceReport:
     name: str
     path: Path
     sessions: int
-    project_files: int
+    files: int
+    memory_sources: int
     coverage: Coverage
 
 
@@ -135,10 +112,10 @@ class ExportReport:
     output: Path
     sessions_discovered: int
     sessions_exported: int
-    sessions_without_transcripts: int
-    memory_files: int
-    project_files: int
-    transcript_warnings: int
+    workspace_memory_files: int
+    shared_memory_sources: int
+    files: int
+    warnings: int
     secrets_redacted: int
     workspaces: tuple[WorkspaceReport, ...]
     coverage: Coverage
