@@ -10,11 +10,13 @@ from . import __version__
 from .core import (
     CoworkExportError,
     ExportOptions,
+    InstallOptions,
     discover_memory_files,
     discover_sessions,
     export_package,
     format_datetime,
     group_sessions,
+    install_workspaces,
     resolve_source,
 )
 
@@ -74,6 +76,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not export Cowork's hidden cross-workspace memory for review.",
     )
+
+    install = subparsers.add_parser(
+        "install",
+        help="Install memory and history into original single-folder workspaces.",
+    )
+    add_source_argument(install)
+    install.add_argument(
+        "--workspace",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="Install only this workspace ID. Repeat to select several; scan lists IDs.",
+    )
+    install.add_argument(
+        "--with-evidence",
+        action="store_true",
+        help="Also include redacted tool evidence and subagent history.",
+    )
+    install.add_argument(
+        "--since", type=iso_date, help="Include sessions active on or after YYYY-MM-DD."
+    )
+    install.add_argument(
+        "--exclude-archived",
+        action="store_true",
+        help="Skip sessions marked archived in Cowork.",
+    )
     return parser
 
 
@@ -93,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_scan(args)
         if args.command == "export":
             return run_export(args)
+        if args.command == "install":
+            return run_install(args)
     except CoworkExportError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -188,6 +218,37 @@ def run_export(args: argparse.Namespace) -> int:
         )
     if report.shared_memory_sources:
         print("Hidden shared memory is quarantined in: _shared-memory/MEMORY.md")
+    print(f"Parser/read warnings: {report.warnings}")
+    print(f"Credential-pattern matches redacted: {report.secrets_redacted}")
+    return 0
+
+
+def run_install(args: argparse.Namespace) -> int:
+    source = resolve_source(args.source)
+    report = install_workspaces(
+        InstallOptions(
+            source=source,
+            since=args.since,
+            exclude_archived=args.exclude_archived,
+            include_evidence=args.with_evidence,
+            workspace_ids=tuple(args.workspace),
+        )
+    )
+
+    print(
+        f"Installed {report.sessions_installed} sessions into "
+        f"{len(report.workspaces)} original workspace folders."
+    )
+    for workspace in report.workspaces:
+        print(
+            f"- {workspace.workspace_id}: {workspace.sessions} sessions -> "
+            f"{workspace.path}"
+        )
+    if report.skipped:
+        print(
+            f"Kept {len(report.skipped)} composite or unassigned workspaces separate. "
+            "Use `export` to create portable folders for them."
+        )
     print(f"Parser/read warnings: {report.warnings}")
     print(f"Credential-pattern matches redacted: {report.secrets_redacted}")
     return 0

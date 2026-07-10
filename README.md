@@ -1,7 +1,7 @@
 <h1 align="center">cowork-to-chatgpt</h1>
 
 <p align="center">
-  Move Claude Cowork memory and conversation history into simple, isolated files that ChatGPT and Codex understand.
+  Move Claude Cowork memory and conversation history into the original workspace folders where ChatGPT and Codex can use them.
 </p>
 
 <p align="center">
@@ -11,18 +11,19 @@
   <img alt="Runtime dependencies: zero" src="https://img.shields.io/badge/runtime_dependencies-0-brightgreen">
 </p>
 
-One command turns your local Cowork archive into one portable context folder per workspace:
+One command installs Cowork context into the folders where you already work:
 
 ```text
-Claude Cowork                       ChatGPT-ready workspace
+Claude Cowork                       Original workspace folder
 ──────────────────────              ─────────────────────────
-Selected workspace folder  ─┐       AGENTS.md
-  CLAUDE.md                  ├────▶  MEMORY.md
-  memory/**/*.md             │       HISTORY_INDEX.md
-Hidden session transcripts  ─┘       HISTORY.md
+Selected workspace folder  ─┐       existing files (preserved)
+  CLAUDE.md                  ├────▶  AGENTS.md
+  memory/**/*.md             │       MEMORY.md
+Hidden session transcripts  ─┘       HISTORY_INDEX.md + HISTORY.md
 ```
 
-Your source stays untouched. Unrelated workspaces never get mixed. No cloud API is required.
+Existing instructions and memory are preserved. Unrelated workspaces never get mixed. No cloud
+API is required.
 
 ## Quick start
 
@@ -34,11 +35,13 @@ uv tool install git+https://github.com/tomascupr/cowork-to-chatgpt.git
 # Preview the workspace boundaries
 cowork2chatgpt scan
 
-# Export everything
-cowork2chatgpt export
+# Install context into the original workspace folders
+cowork2chatgpt install
 ```
 
-The result is written to `chatgpt-context-YYYY-MM-DD/`.
+`install` adds or updates the context files in every original single-folder workspace. It is
+idempotent: running it again refreshes the managed sections without duplicating them. Existing
+`AGENTS.md` and `MEMORY.md` content remains intact.
 
 To run from a clone instead:
 
@@ -47,10 +50,43 @@ git clone https://github.com/tomascupr/cowork-to-chatgpt.git
 cd cowork-to-chatgpt
 uv sync --locked
 uv run cowork2chatgpt scan
-uv run cowork2chatgpt export
+uv run cowork2chatgpt install
 ```
 
-## The output
+## What is installed
+
+```text
+your-existing-workspace/
+├── your existing files...
+├── AGENTS.md
+├── MEMORY.md
+├── HISTORY_INDEX.md
+└── HISTORY.md
+```
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Existing instructions plus a managed section telling Codex how to load context |
+| `MEMORY.md` | Existing memory plus workspace-owned Cowork memory and user preferences |
+| `HISTORY_INDEX.md` | Searchable session index and an honest transfer-coverage report |
+| `HISTORY.md` | Human and assistant conversation history |
+
+Large histories become numbered `HISTORY_001.md`, `HISTORY_002.md`, and so on.
+
+The installer refuses to overwrite unrelated `HISTORY.md` files. Composite workspaces remain
+separate instead of being copied into each constituent folder. Sessions without a selected folder
+also remain separate. Use the portable export for those contexts.
+
+## Portable export
+
+Use `export` when you want standalone folders for ChatGPT Projects, backup, composite workspaces,
+or unassigned sessions:
+
+```bash
+cowork2chatgpt export
+```
+
+The result is written to `chatgpt-context-YYYY-MM-DD/`:
 
 ```text
 chatgpt-context-2026-07-10/
@@ -67,32 +103,21 @@ chatgpt-context-2026-07-10/
     └── MEMORY.md
 ```
 
-Each normal workspace folder is ready to use:
-
-| File | Purpose |
-|---|---|
-| `AGENTS.md` | Tells Codex how to load the context safely |
-| `MEMORY.md` | Durable workspace memory and structured user preferences |
-| `HISTORY_INDEX.md` | Searchable session index and an honest transfer-coverage report |
-| `HISTORY.md` | Human and assistant conversation history |
-
-Large histories become numbered `HISTORY_001.md`, `HISTORY_002.md`, and so on.
-
 ### Use it with Codex
 
-Open one exported workspace folder. Codex reads `AGENTS.md`, which points it to durable memory and
-tells it to search history only when relevant.
+After `install`, keep opening your original workspace folder. Codex reads `AGENTS.md`, which
+points it to durable memory and tells it to search history only when relevant.
 
 ### Use it with ChatGPT Projects
 
-Upload every Markdown file from one workspace folder. If ChatGPT asks for Project instructions,
-use the contents of `AGENTS.md`.
+For a ChatGPT Project, upload every Markdown file from one portable export folder. If ChatGPT asks
+for Project instructions, use the contents of `AGENTS.md`.
 
 ### Keep working in your existing Cowork folder
 
-You do not have to move anything. Cowork folders are ordinary folders. You can open the same
-folder in Codex, or copy/merge the exported memory and history into it. Never overwrite an
-existing `AGENTS.md` or `MEMORY.md`; merge them intentionally.
+You do not have to move anything. Cowork folders are ordinary folders, and `install` writes the
+context into those folders directly. Only the four context-file families are managed. All other
+workspace files remain untouched.
 
 ## Memory that actually follows the workspace
 
@@ -121,17 +146,20 @@ Do not combine exported workspace folders unless you intentionally want their co
 ## Useful options
 
 ```bash
-# Export one workspace shown by `scan`
-cowork2chatgpt export ./context --workspace duvo
+# Install one workspace shown by `scan`
+cowork2chatgpt install --workspace duvo
 
 # Only sessions active since a date
-cowork2chatgpt export ./recent --since 2026-06-01
+cowork2chatgpt install --since 2026-06-01
 
 # Skip sessions archived in Cowork
-cowork2chatgpt export ./active --exclude-archived
+cowork2chatgpt install --exclude-archived
 
 # Add redacted, size-capped tool evidence and subagent history
-cowork2chatgpt export ./evidence --with-evidence
+cowork2chatgpt install --with-evidence
+
+# Create portable packages instead of changing original folders
+cowork2chatgpt export
 
 # Do not export hidden global memory for review
 cowork2chatgpt export ./context --no-shared-memory
@@ -140,11 +168,12 @@ cowork2chatgpt export ./context --no-shared-memory
 cowork2chatgpt export ./context --source "/path/to/local-agent-mode-sessions"
 ```
 
-Run `cowork2chatgpt export --help` for the complete CLI reference.
+Run `cowork2chatgpt install --help` or `cowork2chatgpt export --help` for the complete CLI
+reference.
 
 ## Privacy model
 
-The default export preserves durable user context without copying the entire execution trace.
+The default transfer preserves durable user context without copying the entire execution trace.
 
 | Data | Default | `--with-evidence` |
 |---|---:|---:|
@@ -159,7 +188,8 @@ The default export preserves durable user context without copying the entire exe
 
 Credential redaction is best effort, not a security guarantee. Review files before uploading or
 sharing them. Every workspace's `HISTORY_INDEX.md` reports what was included, omitted, truncated,
-or unreadable.
+or unreadable. Installed memory and history may be sensitive; do not commit them to a public
+repository.
 
 ## Data location and support
 

@@ -97,6 +97,18 @@ class ExportOptions:
 
 
 @dataclass(frozen=True)
+class InstallOptions:
+    source: Path
+    since: date | None = None
+    exclude_archived: bool = False
+    include_evidence: bool = False
+    redact: bool = True
+    max_project_files: int = 20
+    target_chunk_chars: int = 1_500_000
+    workspace_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkspaceReport:
     workspace_id: str
     name: str
@@ -118,4 +130,22 @@ class ExportReport:
     warnings: int
     secrets_redacted: int
     workspaces: tuple[WorkspaceReport, ...]
+    coverage: Coverage
+
+
+@dataclass(frozen=True)
+class SkippedWorkspace:
+    workspace_id: str
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class InstallReport:
+    sessions_discovered: int
+    sessions_installed: int
+    warnings: int
+    secrets_redacted: int
+    workspaces: tuple[WorkspaceReport, ...]
+    skipped: tuple[SkippedWorkspace, ...]
     coverage: Coverage

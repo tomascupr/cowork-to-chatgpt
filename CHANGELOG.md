@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-07-10
+
+- Add `install` as the recommended flow for working in original Cowork workspace folders.
+- Preserve and extend existing `AGENTS.md` and `MEMORY.md` files with idempotent managed blocks.
+- Refuse to overwrite unrelated history files and remove only stale exporter-owned chunks.
+- Keep composite and unassigned workspaces separate instead of injecting them into constituent
+  folders.
+- Deduplicate memory files by filesystem identity on case-insensitive macOS volumes.
+
 ## 0.3.0 — 2026-07-10
 
 - Replace nested migration packages with one ready-to-open folder per workspace.

@@ -8,12 +8,14 @@ from pathlib import Path
 from cowork2chatgpt.core import (
     CoworkExportError,
     ExportOptions,
+    InstallOptions,
     Redactor,
     discover_memory_files,
     discover_sessions,
     discover_workspace_memory_files,
     export_package,
     group_sessions,
+    install_workspaces,
     pack_documents,
     parse_session,
 )
@@ -31,6 +33,12 @@ class CoworkExportTests(unittest.TestCase):
         self.folder_b.mkdir(parents=True)
         (self.folder_a / "CLAUDE.md").write_text(
             "# Alpha instructions\n\nAlpha memory only.\n", encoding="utf-8"
+        )
+        (self.folder_a / "AGENTS.md").write_text(
+            "# Existing project instructions\n\nKeep this content.\n", encoding="utf-8"
+        )
+        (self.folder_a / "MEMORY.md").write_text(
+            "# Existing memory\n\nKeep this memory.\n", encoding="utf-8"
         )
         (self.folder_a / "memory" / "decisions.md").write_text(
             "# Alpha decisions\n\napi_key = supersecret123\n", encoding="utf-8"
@@ -251,8 +259,8 @@ class CoworkExportTests(unittest.TestCase):
             composite.folders,
             tuple(sorted((str(self.folder_a), str(self.folder_b)))),
         )
-        self.assertEqual(len(discover_workspace_memory_files(alpha)), 2)
-        self.assertEqual(len(discover_workspace_memory_files(composite)), 3)
+        self.assertEqual(len(discover_workspace_memory_files(alpha)), 3)
+        self.assertEqual(len(discover_workspace_memory_files(composite)), 4)
         self.assertEqual(len(discover_memory_files(self.source)), 1)
         self.assertEqual(sessions[0].user_preferences, ("- Be candid and honest.",))
 
@@ -355,6 +363,73 @@ class CoworkExportTests(unittest.TestCase):
 
         self.assertFalse((output / "_shared-memory").exists())
         self.assertEqual(report.shared_memory_sources, 0)
+
+    def test_install_writes_original_folders_without_mixing_or_overwriting(
+        self,
+    ) -> None:
+        report = install_workspaces(InstallOptions(source=self.source))
+        alpha_agents = (self.folder_a / "AGENTS.md").read_text(encoding="utf-8")
+        alpha_memory = (self.folder_a / "MEMORY.md").read_text(encoding="utf-8")
+        alpha_history = (self.folder_a / "HISTORY.md").read_text(encoding="utf-8")
+        beta_history = (self.folder_b / "HISTORY.md").read_text(encoding="utf-8")
+
+        self.assertEqual(report.sessions_installed, 2)
+        self.assertEqual(len(report.workspaces), 2)
+        self.assertEqual(len(report.skipped), 3)
+        self.assertIn("Keep this content", alpha_agents)
+        self.assertIn("cowork2chatgpt:instructions:start", alpha_agents)
+        self.assertIn("Keep this memory", alpha_memory)
+        self.assertIn("Alpha memory only", alpha_memory)
+        self.assertNotIn("Beta memory only", alpha_memory)
+        self.assertIn("Alpha only", alpha_history)
+        self.assertNotIn("Beta only", alpha_history)
+        self.assertNotIn("Composite only", alpha_history)
+        self.assertIn("Beta only", beta_history)
+        self.assertNotIn("Composite only", beta_history)
+
+        install_workspaces(InstallOptions(source=self.source))
+        alpha_agents = (self.folder_a / "AGENTS.md").read_text(encoding="utf-8")
+        alpha_memory = (self.folder_a / "MEMORY.md").read_text(encoding="utf-8")
+        alpha_history = (self.folder_a / "HISTORY.md").read_text(encoding="utf-8")
+        self.assertEqual(alpha_agents.count("cowork2chatgpt:instructions:start"), 1)
+        self.assertEqual(alpha_memory.count("cowork2chatgpt:memory:start"), 1)
+        self.assertEqual(alpha_memory.count("Keep this memory"), 1)
+        self.assertEqual(alpha_memory.count("Alpha instructions"), 1)
+        self.assertEqual(alpha_history.count(self.alpha["session_id"]), 1)
+
+        portable = self.root / "post-install-export"
+        alpha_workspace = next(
+            workspace
+            for workspace in group_sessions(discover_sessions(self.source)[0])
+            if workspace.name == "Alpha"
+        )
+        export_package(
+            ExportOptions(
+                source=self.source,
+                output=portable,
+                workspace_ids=(alpha_workspace.workspace_id,),
+            )
+        )
+        portable_memory = (
+            portable / alpha_workspace.workspace_id / "MEMORY.md"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(portable_memory.count("Keep this memory"), 1)
+        self.assertEqual(portable_memory.count("Alpha instructions"), 1)
+
+    def test_install_refuses_to_replace_unrelated_history(self) -> None:
+        unrelated = self.folder_b / "HISTORY.md"
+        unrelated.write_text("# My hand-written history\n", encoding="utf-8")
+
+        with self.assertRaises(CoworkExportError):
+            install_workspaces(InstallOptions(source=self.source))
+
+        self.assertEqual(
+            unrelated.read_text(encoding="utf-8"), "# My hand-written history\n"
+        )
+        self.assertNotIn(
+            "cowork2chatgpt:instructions:start",
+            (self.folder_a / "AGENTS.md").read_text(encoding="utf-8"),
+        )
 
     def test_refuses_unknown_workspace_and_existing_output(self) -> None:
         with self.assertRaises(CoworkExportError):

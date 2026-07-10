@@ -230,10 +230,11 @@ def discover_workspace_memory_files(workspace: Workspace) -> list[Path]:
                 path for path in memory_dir.rglob("*.md") if path.is_file()
             )
 
-    unique: dict[Path, Path] = {}
+    unique: dict[tuple[int, int] | Path, Path] = {}
     for path in candidates:
         try:
-            unique[path.resolve()] = path
+            stat = path.stat()
+            unique[(stat.st_dev, stat.st_ino)] = path
         except OSError:
             unique[path.absolute()] = path
     return sorted(unique.values(), key=lambda path: str(path).lower())

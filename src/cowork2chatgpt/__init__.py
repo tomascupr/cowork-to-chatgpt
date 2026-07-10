@@ -1,6 +1,20 @@
 """Move Claude Cowork memory and history into ChatGPT-ready files."""
 
-from .core import ExportOptions, ExportReport, export_package
+from .core import (
+    ExportOptions,
+    ExportReport,
+    InstallOptions,
+    InstallReport,
+    export_package,
+    install_workspaces,
+)
 
-__all__ = ["ExportOptions", "ExportReport", "export_package"]
-__version__ = "0.3.0"
+__all__ = [
+    "ExportOptions",
+    "ExportReport",
+    "InstallOptions",
+    "InstallReport",
+    "export_package",
+    "install_workspaces",
+]
+__version__ = "0.4.0"

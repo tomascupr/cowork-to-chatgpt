@@ -3,8 +3,13 @@
 ## Sensitive data
 
 Cowork transcripts can contain credentials, personal information, customer data, and other
-confidential material. The built-in redactor is best effort, not a guarantee. Review every
-export before uploading, publishing, or sharing it.
+confidential material. The built-in redactor is best effort, not a guarantee. Review generated
+files before uploading, publishing, sharing, or committing them.
+
+`export` is read-only and creates a separate portable package. `install` writes only
+`AGENTS.md`, `MEMORY.md`, `HISTORY_INDEX.md`, and `HISTORY*.md` in original single-folder
+workspaces. It preserves pre-existing instructions and memory in managed blocks, is idempotent,
+and refuses to replace an unrelated history file. All other workspace files remain untouched.
 
 The exporter never copies raw metadata or JSONL transcripts. Standard mode excludes system
 prompts, hidden reasoning, tool calls, and tool results. `--with-evidence` adds redacted,

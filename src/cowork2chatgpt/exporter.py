@@ -22,8 +22,11 @@ from .models import (
     Coverage,
     ExportOptions,
     ExportReport,
+    InstallOptions,
+    InstallReport,
     Session,
     SessionExport,
+    SkippedWorkspace,
     Turn,
     Workspace,
     WorkspaceReport,
@@ -32,6 +35,10 @@ from .transcript import Redactor, parse_session
 
 
 MAX_PROJECT_TEXT_CHARS = 7_000_000
+AGENTS_START = "<!-- cowork2chatgpt:instructions:start -->"
+AGENTS_END = "<!-- cowork2chatgpt:instructions:end -->"
+MEMORY_START = "<!-- cowork2chatgpt:memory:start -->"
+MEMORY_END = "<!-- cowork2chatgpt:memory:end -->"
 
 
 def export_package(options: ExportOptions) -> ExportReport:
@@ -119,6 +126,151 @@ def export_package(options: ExportOptions) -> ExportReport:
     )
 
 
+def install_workspaces(options: InstallOptions) -> InstallReport:
+    source = resolve_source(options.source)
+    sessions, discovery_warnings = discover_sessions(source)
+    selected_sessions = [
+        session for session in sessions if session_matches(session, options)
+    ]
+    workspaces = select_workspaces(
+        group_sessions(selected_sessions), options.workspace_ids
+    )
+    if not workspaces:
+        raise CoworkExportError("No sessions matched the install filters.")
+
+    redactor = Redactor(options.redact)
+    reports: list[WorkspaceReport] = []
+    skipped: list[SkippedWorkspace] = []
+    aggregate_coverage = Coverage()
+    warnings = len(discovery_warnings)
+    eligible: list[tuple[Workspace, Path]] = []
+
+    for workspace in workspaces:
+        if len(workspace.folders) != 1:
+            reason = (
+                "composite workspace must remain separate"
+                if workspace.folders
+                else "session has no selected working folder"
+            )
+            skipped.append(
+                SkippedWorkspace(
+                    workspace_id=workspace.workspace_id,
+                    name=workspace.name,
+                    reason=reason,
+                )
+            )
+            continue
+
+        target = Path(workspace.folders[0]).expanduser().resolve()
+        if not target.is_dir():
+            skipped.append(
+                SkippedWorkspace(
+                    workspace_id=workspace.workspace_id,
+                    name=workspace.name,
+                    reason=f"working folder not found: {normalize_home(str(target))}",
+                )
+            )
+            continue
+
+        preflight_install_target(target)
+        eligible.append((workspace, target))
+
+    for workspace, target in eligible:
+        report, workspace_warnings = install_workspace(
+            target,
+            workspace=workspace,
+            options=options,
+            redactor=redactor,
+        )
+        reports.append(report)
+        aggregate_coverage.merge(report.coverage)
+        warnings += workspace_warnings
+
+    return InstallReport(
+        sessions_discovered=len(sessions),
+        sessions_installed=sum(report.sessions for report in reports),
+        warnings=warnings + aggregate_coverage.warnings,
+        secrets_redacted=redactor.replacements,
+        workspaces=tuple(reports),
+        skipped=tuple(skipped),
+        coverage=aggregate_coverage,
+    )
+
+
+def install_workspace(
+    target: Path,
+    *,
+    workspace: Workspace,
+    options: InstallOptions,
+    redactor: Redactor,
+) -> tuple[WorkspaceReport, int]:
+    safe_workspace = replace(
+        workspace,
+        name=redactor.redact(workspace.name),
+        folders=tuple(redactor.redact(folder) for folder in workspace.folders),
+    )
+    session_exports = [
+        build_session_export(session, options, redactor)
+        for session in workspace.sessions
+    ]
+    coverage = Coverage()
+    for item in session_exports:
+        coverage.merge(item.coverage)
+
+    memory_target = (target / "MEMORY.md").resolve()
+    memory_paths = [
+        path
+        for path in discover_workspace_memory_files(workspace)
+        if not paths_refer_to_same_file(path, memory_target)
+    ]
+    memory_markdown, memory_sources, memory_warnings = render_workspace_memory(
+        workspace, session_exports, memory_paths, redactor
+    )
+    chunks = pack_documents(
+        [item.markdown for item in session_exports],
+        target_chars=options.target_chunk_chars,
+        max_chunks=options.max_project_files - 3,
+    )
+    history_files = {
+        ("HISTORY.md" if len(chunks) == 1 else f"HISTORY_{index:03d}.md"): chunk
+        for index, chunk in enumerate(chunks, start=1)
+    }
+    validate_install_collisions(target, history_files)
+
+    merge_managed_file(
+        target / "AGENTS.md",
+        render_agents(safe_workspace),
+        start=AGENTS_START,
+        end=AGENTS_END,
+    )
+    merge_managed_file(
+        target / "MEMORY.md",
+        memory_markdown,
+        start=MEMORY_START,
+        end=MEMORY_END,
+    )
+    atomic_write_text(
+        target / "HISTORY_INDEX.md",
+        render_history_index(safe_workspace, session_exports, coverage, options),
+    )
+    for filename, content in history_files.items():
+        atomic_write_text(target / filename, content)
+    remove_stale_history_files(target, set(history_files))
+
+    return (
+        WorkspaceReport(
+            workspace_id=workspace.workspace_id,
+            name=safe_workspace.name,
+            path=target,
+            sessions=len(session_exports),
+            files=3 + len(chunks),
+            memory_sources=memory_sources,
+            coverage=coverage,
+        ),
+        memory_warnings,
+    )
+
+
 def write_workspace(
     output: Path,
     *,
@@ -175,7 +327,7 @@ def write_workspace(
 
 
 def build_session_export(
-    session: Session, options: ExportOptions, redactor: Redactor
+    session: Session, options: ExportOptions | InstallOptions, redactor: Redactor
 ) -> SessionExport:
     mode = "evidence" if options.include_evidence else "standard"
     turns, coverage = parse_session(
@@ -251,6 +403,10 @@ def render_workspace_memory(
         except (OSError, UnicodeDecodeError):
             warnings += 1
             continue
+        if MEMORY_START in content:
+            content = remove_managed_block(
+                content, start=MEMORY_START, end=MEMORY_END
+            ).strip()
         readable += 1
         lines.extend(
             [
@@ -309,7 +465,7 @@ def render_history_index(
     workspace: Workspace,
     items: list[SessionExport],
     coverage: Coverage,
-    options: ExportOptions,
+    options: ExportOptions | InstallOptions,
 ) -> str:
     mode = (
         "text plus redacted tool evidence and subagent history"
@@ -426,9 +582,8 @@ def write_root_files(
         "  the memory and search the history.",
         "- ChatGPT Projects: upload every Markdown file from one workspace folder and use",
         "  `AGENTS.md` as the Project instruction if the product asks for one.",
-        "- Existing workspace: keep working in the original folder. You do not need to move it.",
-        "  Copy in the exported memory/history only if you want the old Cowork conversations",
-        "  available there. Merge rather than overwrite an existing `AGENTS.md` or `MEMORY.md`.",
+        "- Existing workspace: keep working in the original folder. Run `cowork2chatgpt install`",
+        "  to add or refresh memory and history there without replacing existing instructions.",
         "",
         "| Workspace | Sessions | Memory sources | Files | Folder |",
         "|---|---:|---:|---:|---|",
@@ -518,7 +673,7 @@ def select_workspaces(
     ]
 
 
-def session_matches(session: Session, options: ExportOptions) -> bool:
+def session_matches(session: Session, options: ExportOptions | InstallOptions) -> bool:
     if options.exclude_archived and session.archived:
         return False
     if options.since:
@@ -617,3 +772,102 @@ def escape_table_cell(value: str) -> str:
 
 def write_text(path: Path, content: str) -> None:
     path.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+
+def validate_install_collisions(target: Path, history_files: dict[str, str]) -> None:
+    index = target / "HISTORY_INDEX.md"
+    if index.exists() and not file_starts_with(index, "# History index —"):
+        raise CoworkExportError(f"Refusing to replace unrelated history index: {index}")
+    for filename in history_files:
+        path = target / filename
+        if path.exists() and not file_starts_with(path, "# Imported Cowork history —"):
+            raise CoworkExportError(
+                f"Refusing to replace unrelated history file: {path}"
+            )
+
+
+def preflight_install_target(target: Path) -> None:
+    validate_managed_file(target / "AGENTS.md", start=AGENTS_START, end=AGENTS_END)
+    validate_managed_file(target / "MEMORY.md", start=MEMORY_START, end=MEMORY_END)
+    candidates = [target / "HISTORY_INDEX.md", target / "HISTORY.md"]
+    candidates.extend(target.glob("HISTORY_[0-9][0-9][0-9].md"))
+    for path in candidates:
+        if not path.exists():
+            continue
+        expected = (
+            "# History index —"
+            if path.name == "HISTORY_INDEX.md"
+            else "# Imported Cowork history —"
+        )
+        if not file_starts_with(path, expected):
+            raise CoworkExportError(f"Refusing to replace unrelated file: {path}")
+
+
+def validate_managed_file(path: Path, *, start: str, end: str) -> None:
+    if not path.exists():
+        return
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise CoworkExportError(
+            f"Could not read existing file {path}: {error}"
+        ) from error
+    remove_managed_block(content, start=start, end=end)
+
+
+def remove_stale_history_files(target: Path, current: set[str]) -> None:
+    for path in target.glob("HISTORY*.md"):
+        if path.name == "HISTORY_INDEX.md" or path.name in current:
+            continue
+        if file_starts_with(path, "# Imported Cowork history —"):
+            path.unlink()
+
+
+def file_starts_with(path: Path, prefix: str) -> bool:
+    try:
+        with path.open(encoding="utf-8") as file:
+            return file.readline().startswith(prefix)
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def merge_managed_file(path: Path, content: str, *, start: str, end: str) -> None:
+    try:
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    except (OSError, UnicodeDecodeError) as error:
+        raise CoworkExportError(
+            f"Could not read existing file {path}: {error}"
+        ) from error
+    unmanaged = remove_managed_block(existing, start=start, end=end).rstrip()
+    managed = f"{start}\n{content.strip()}\n{end}"
+    combined = f"{unmanaged}\n\n{managed}" if unmanaged else managed
+    atomic_write_text(path, combined)
+
+
+def remove_managed_block(text: str, *, start: str, end: str) -> str:
+    while start in text:
+        before, remainder = text.split(start, 1)
+        if end not in remainder:
+            raise CoworkExportError(
+                f"Managed block starts with {start!r} but has no matching end marker."
+            )
+        _, after = remainder.split(end, 1)
+        text = before.rstrip() + after.lstrip("\n")
+    return text
+
+
+def atomic_write_text(path: Path, content: str) -> None:
+    temporary = path.with_name(f".{path.name}.cowork2chatgpt.tmp")
+    try:
+        temporary.write_text(content.rstrip() + "\n", encoding="utf-8")
+        temporary.replace(path)
+    except OSError as error:
+        temporary.unlink(missing_ok=True)
+        raise CoworkExportError(f"Could not write {path}: {error}") from error
+
+
+def paths_refer_to_same_file(first: Path, second: Path) -> bool:
+    try:
+        return first.samefile(second)
+    except OSError:
+        return first.resolve() == second.resolve()
