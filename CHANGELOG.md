@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 — 2026-07-10
+
+- Make the documented `AGENTS.md` file the sole native Codex instruction entry point.
+- Fold project-specific Claude instructions and memory into `AGENTS.md`, with an explicit overflow
+  document only when the documented instruction-size limit would be exceeded.
+- Rename supplemental history files to explicit `COWORK_*.md` names and document that they are
+  ordinary Markdown, not reserved ChatGPT filenames.
+- Safely migrate exporter-owned 0.4 files while preserving user-authored memory and history.
+- Position the tool as a full-history supplement to OpenAI's native desktop import flow.
+- Never write into the generated `~/.codex/memories/` state store.
+
 ## 0.4.0 — 2026-07-10
 
 - Add `install` as the recommended flow for working in original Cowork workspace folders.

@@ -6,10 +6,14 @@ Cowork transcripts can contain credentials, personal information, customer data,
 confidential material. The built-in redactor is best effort, not a guarantee. Review generated
 files before uploading, publishing, sharing, or committing them.
 
-`export` is read-only and creates a separate portable package. `install` writes only
-`AGENTS.md`, `MEMORY.md`, `HISTORY_INDEX.md`, and `HISTORY*.md` in original single-folder
-workspaces. It preserves pre-existing instructions and memory in managed blocks, is idempotent,
-and refuses to replace an unrelated history file. All other workspace files remain untouched.
+`export` is read-only and creates a separate portable package. `install` updates a managed block
+in `AGENTS.md` and writes `COWORK_HISTORY_INDEX.md` and `COWORK_HISTORY*.md` in original
+single-folder workspaces. Oversized imported guidance uses `COWORK_INSTRUCTIONS.md`. It preserves
+pre-existing instructions, refuses to replace unrelated files, and migrates only files carrying
+exporter-owned markers or headers. All other workspace files remain untouched.
+
+The tool never writes to `~/.codex/memories/`. OpenAI documents that directory as generated local
+state rather than a manual import surface.
 
 The exporter never copies raw metadata or JSONL transcripts. Standard mode excludes system
 prompts, hidden reasoning, tool calls, and tool results. `--with-evidence` adds redacted,

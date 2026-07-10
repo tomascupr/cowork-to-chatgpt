@@ -217,7 +217,10 @@ def run_export(args: argparse.Namespace) -> int:
             f"{workspace.memory_sources} memory sources, {workspace.files} files"
         )
     if report.shared_memory_sources:
-        print("Hidden shared memory is quarantined in: _shared-memory/MEMORY.md")
+        print(
+            "Hidden shared memory is quarantined in: "
+            "_shared-memory/COWORK_SHARED_MEMORY.md"
+        )
     print(f"Parser/read warnings: {report.warnings}")
     print(f"Credential-pattern matches redacted: {report.secrets_redacted}")
     return 0
