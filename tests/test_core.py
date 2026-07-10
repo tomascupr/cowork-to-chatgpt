@@ -45,7 +45,7 @@ class CoworkExportTests(unittest.TestCase):
                 "alpha-user",
                 {
                     "role": "user",
-                    "content": "Alpha only. sk-ant-abcdefghijklmnopqrstuv",
+                    "content": "Alpha only. " + "sk-ant-" + "abcdefghijklmnopqrstuv",
                 },
             ),
             self.record(

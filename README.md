@@ -1,31 +1,56 @@
-# cowork-to-chatgpt
+<h1 align="center">cowork-to-chatgpt</h1>
 
-Move Claude Cowork memory and conversation history into simple files that ChatGPT and Codex can
-use immediately.
+<p align="center">
+  Move Claude Cowork memory and conversation history into simple, isolated files that ChatGPT and Codex understand.
+</p>
 
-The exporter is read-only. It does not move, rename, or modify your Cowork folders. It finds the
-workspace attached to each local Cowork session, keeps unrelated workspaces separate, and creates
-one portable context folder for each workspace.
+<p align="center">
+  <a href="https://github.com/tomascupr/cowork-to-chatgpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tomascupr/cowork-to-chatgpt/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
+  <img alt="Runtime dependencies: zero" src="https://img.shields.io/badge/runtime_dependencies-0-brightgreen">
+</p>
+
+One command turns your local Cowork archive into one portable context folder per workspace:
+
+```text
+Claude Cowork                       ChatGPT-ready workspace
+──────────────────────              ─────────────────────────
+Selected workspace folder  ─┐       AGENTS.md
+  CLAUDE.md                  ├────▶  MEMORY.md
+  memory/**/*.md             │       HISTORY_INDEX.md
+Hidden session transcripts  ─┘       HISTORY.md
+```
+
+Your source stays untouched. Unrelated workspaces never get mixed. No cloud API is required.
 
 ## Quick start
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
+
+```bash
+uv tool install git+https://github.com/tomascupr/cowork-to-chatgpt.git
+
+# Preview the workspace boundaries
+cowork2chatgpt scan
+
+# Export everything
+cowork2chatgpt export
+```
+
+The result is written to `chatgpt-context-YYYY-MM-DD/`.
+
+To run from a clone instead:
 
 ```bash
 git clone https://github.com/tomascupr/cowork-to-chatgpt.git
 cd cowork-to-chatgpt
-uv sync
-
-# See what will be exported
+uv sync --locked
 uv run cowork2chatgpt scan
-
-# Export every workspace
 uv run cowork2chatgpt export
 ```
 
-The default output is `chatgpt-context-YYYY-MM-DD/`.
-
-## What you get
+## The output
 
 ```text
 chatgpt-context-2026-07-10/
@@ -42,77 +67,118 @@ chatgpt-context-2026-07-10/
     └── MEMORY.md
 ```
 
-Every normal workspace folder is self-contained:
+Each normal workspace folder is ready to use:
 
-- `AGENTS.md` tells Codex how to use the imported context safely.
-- `MEMORY.md` combines structured Cowork preferences with the workspace's existing `CLAUDE.md`,
-  root `MEMORY.md`/`CONTEXT.md`, and `memory/**/*.md` files.
-- `HISTORY_INDEX.md` lists sessions and states what was preserved or omitted.
-- `HISTORY.md` contains the conversations. Large histories become numbered `HISTORY_*.md` files.
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Tells Codex how to load the context safely |
+| `MEMORY.md` | Durable workspace memory and structured user preferences |
+| `HISTORY_INDEX.md` | Searchable session index and an honest transfer-coverage report |
+| `HISTORY.md` | Human and assistant conversation history |
 
-ChatGPT/Codex desktop can open the exported workspace folder directly. For ChatGPT Projects,
-upload every Markdown file from one workspace folder; if asked for Project instructions, use the
-contents of `AGENTS.md`.
+Large histories become numbered `HISTORY_001.md`, `HISTORY_002.md`, and so on.
 
-You can also keep working in the original Cowork folder. Nothing about that folder is
-Claude-specific. Copy or merge the exported memory/history files into it only if you want the old
-conversations available there. Do not overwrite an existing `AGENTS.md` or `MEMORY.md`.
+### Use it with Codex
 
-## Workspace isolation
+Open one exported workspace folder. Codex reads `AGENTS.md`, which points it to durable memory and
+tells it to search history only when relevant.
 
-Isolation is a hard rule:
+### Use it with ChatGPT Projects
 
-- Sessions with the same canonical selected-folder set belong to one workspace.
-- A session with several selected folders belongs to a distinct composite workspace.
-- A session with no selected folder gets its own one-session workspace.
-- Hidden cross-workspace Cowork memory is quarantined under `_shared-memory` and never copied into
-  workspace memory automatically.
+Upload every Markdown file from one workspace folder. If ChatGPT asks for Project instructions,
+use the contents of `AGENTS.md`.
+
+### Keep working in your existing Cowork folder
+
+You do not have to move anything. Cowork folders are ordinary folders. You can open the same
+folder in Codex, or copy/merge the exported memory and history into it. Never overwrite an
+existing `AGENTS.md` or `MEMORY.md`; merge them intentionally.
+
+## Memory that actually follows the workspace
+
+For every selected workspace folder, the exporter looks for:
+
+- `CLAUDE.md`
+- `MEMORY.md` or `memory.md`
+- `CONTEXT.md` or `context.md`
+- every Markdown file under `memory/`
+- structured `<user_preferences>` stored with the relevant Cowork sessions
+
+Cowork's hidden global memory may contain facts from several projects. It is therefore exported
+to `_shared-memory/MEMORY.md` for selective review and is never injected into workspace memory.
+
+## Isolation is a hard rule
+
+| Cowork session | Export behavior |
+|---|---|
+| Same canonical selected-folder set | Grouped into one workspace |
+| Several selected folders | Kept as a distinct composite workspace |
+| No selected folder | Kept as its own one-session workspace |
+| Hidden global memory | Quarantined under `_shared-memory` |
 
 Do not combine exported workspace folders unless you intentionally want their contexts mixed.
 
 ## Useful options
 
 ```bash
-# Export just one workspace
-uv run cowork2chatgpt export ./context --workspace duvo
+# Export one workspace shown by `scan`
+cowork2chatgpt export ./context --workspace duvo
 
-# Only recent sessions
-uv run cowork2chatgpt export ./recent --since 2026-06-01
+# Only sessions active since a date
+cowork2chatgpt export ./recent --since 2026-06-01
 
 # Skip sessions archived in Cowork
-uv run cowork2chatgpt export ./active --exclude-archived
+cowork2chatgpt export ./active --exclude-archived
 
 # Add redacted, size-capped tool evidence and subagent history
-uv run cowork2chatgpt export ./evidence --with-evidence
+cowork2chatgpt export ./evidence --with-evidence
 
-# Do not export hidden cross-workspace memory for review
-uv run cowork2chatgpt export ./context --no-shared-memory
+# Do not export hidden global memory for review
+cowork2chatgpt export ./context --no-shared-memory
 
 # Use an explicit Cowork data location
-uv run cowork2chatgpt export ./context --source "/path/to/local-agent-mode-sessions"
+cowork2chatgpt export ./context --source "/path/to/local-agent-mode-sessions"
 ```
 
-The source is auto-detected on macOS at
-`~/Library/Application Support/Claude/local-agent-mode-sessions`. Set `COWORK_DATA_DIR` or pass
-`--source` for other locations.
+Run `cowork2chatgpt export --help` for the complete CLI reference.
 
-## What is deliberately excluded
+## Privacy model
 
-The default export contains human and assistant text. It excludes hidden reasoning, system
-prompts, tool calls/results, binary attachment bodies, and operational records. These are not
-durable user memory and can contain credentials, stale instructions, or large amounts of noise.
+The default export preserves durable user context without copying the entire execution trace.
 
-`--with-evidence` adds redacted tool calls/results, attachment descriptors, and subagent history.
-It still excludes hidden reasoning and system prompts.
+| Data | Default | `--with-evidence` |
+|---|---:|---:|
+| User and assistant text | Included | Included |
+| Workspace-owned memory | Included | Included |
+| Tool calls and results | Excluded | Redacted and size-capped |
+| Subagent history | Excluded | Included |
+| Attachment descriptors | Excluded | Included |
+| Hidden reasoning | Excluded | Excluded |
+| System prompts | Excluded | Excluded |
+| Raw metadata and JSONL | Excluded | Excluded |
 
 Credential redaction is best effort, not a security guarantee. Review files before uploading or
-sharing them. The source format is undocumented and may change; `HISTORY_INDEX.md` and
-`manifest.json` expose parser warnings and transfer coverage.
+sharing them. Every workspace's `HISTORY_INDEX.md` reports what was included, omitted, truncated,
+or unreadable.
+
+## Data location and support
+
+On macOS, Cowork data is auto-detected at:
+
+```text
+~/Library/Application Support/Claude/local-agent-mode-sessions
+```
+
+Set `COWORK_DATA_DIR` or pass `--source` for custom locations. Only locally persisted Cowork
+sessions can be exported; cloud-only Claude conversations may not be present.
+
+Cowork's local format is undocumented and can change. If you find a new record shape, open an
+issue with a minimal synthetic fixture. Never publish real transcripts, metadata, or memory.
 
 ## Development
 
 ```bash
-uv sync
+uv sync --locked
 uv run ruff check .
 uv run ruff format --check .
 uv run python -m unittest discover -s tests -v
@@ -120,7 +186,7 @@ uv run python -m compileall -q src tests
 uv build
 ```
 
-Use synthetic fixtures in issues and tests. Never publish real transcripts, metadata, or memory.
+The project has zero runtime dependencies and uses only Python's standard library.
 
 ## License
 
